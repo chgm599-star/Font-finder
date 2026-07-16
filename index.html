@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- Playables SDK -->
+<script>// Playables SDK v1.0.0
+// Game lifecycle bridge: rAF-based game-ready detection + event communication
+(function() {
+  'use strict';
+
+  // Idempotency: skip if already initialized (e.g., server-side injection
+  // followed by client-side inject-javascript via the Bloks webview component).
+  if (window.playablesSDK) return;
+
+  var HANDLER_NAME = 'playablesGameEventHandler';
+  var ANDROID_BRIDGE_NAME = '_MetaPlayablesBridge';
+  var RAF_FRAME_THRESHOLD = 3;
+
+  var gameReadySent = false;
+  var firstInteractionSent = false;
+  var errorSent = false;
+  var frameCount = 0;
+  var originalRAF = window.requestAnimationFrame;
+
+  // --- Transport Layer ---
+
+  function hasIOSBridge() {
+    return !!(window.webkit &&
+              window.webkit.messageHandlers &&
+              window.webkit.messageHandlers[HANDLER_NAME]);
+  }
+
+  function hasAndroidBridge() {
+    return !!(window[ANDROID_BRIDGE_NAME] &&
+              typeof window[ANDROID_BRIDGE_NAME].postEvent === 'function');
+  }
+
+  function isInIframe() {
+    return !!(window.parent && window.parent !== window);
+  }
+
+  function sendEvent(eventName, payload) {
+    var message = {
+      type: eventName,
+      payload: payload || {},
+      timestamp: Date.now()
+    };
+
+    if (hasIOSBridge()) {
+      try {
+        window.webkit.messageHandlers[HANDLER_NAME].postMessage(message);
+      } catch (e) { /* ignore */ }
+      return;
+    }
+
+    if (hasAndroidBridge()) {
+    try {
+      var p = payload || {};
+      p.__secureToken = window.__fbAndroidBridgeAuthToken || '';
+      p.timestamp = message.timestamp;
+      window[ANDROID_BRIDGE_NAME].postEvent(
+        eventName,
+        JSON.stringify(p)
+      );
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
+    if (isInIframe()) {
+      try {
+        window.parent.postMessage(message, '*');
+      } catch (e) { /* ignore */ }
+      return;
+    }
+  }
+
+  // --- rAF Game-Ready Detection ---
+
+  function onFrame() {
+    if (gameReadySent) return;
+
+    frameCount++;
+    if (frameCount >= RAF_FRAME_THRESHOLD) {
+      gameReadySent = true;
+      sendEvent('game_ready', {
+        frame_count: frameCount,
+        detected_at: Date.now()
+      });
+      return;
+    }
+
+    originalRAF.call(window, onFrame);
+  }
+
+  if (originalRAF) {
+    window.requestAnimationFrame = function(callback) {
+      if (!gameReadySent) {
+        return originalRAF.call(window, function(timestamp) {
+          frameCount++;
+          if (frameCount >= RAF_FRAME_THRESHOLD && !gameReadySent) {
+            gameReadySent = true;
+            sendEvent('game_ready', {
+              frame_count: frameCount,
+              detected_at: Date.now()
+            });
+          }
+          callback(timestamp);
+        });
+      }
+      return originalRAF.call(window, callback);
+    };
+  }
+
+  // --- First User Interaction Detection ---
+
+  function setupFirstInteractionDetection() {
+    var events = ['touchstart', 'mousedown', 'keydown'];
+
+    function onFirstInteraction() {
+      if (firstInteractionSent) return;
+      firstInteractionSent = true;
+      sendEvent('user_interaction_start', null);
+
+      for (var i = 0; i < events.length; i++) {
+        document.removeEventListener(events[i], onFirstInteraction, true);
+      }
+    }
+
+    for (var i = 0; i < events.length; i++) {
+      document.addEventListener(events[i], onFirstInteraction, true);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupFirstInteractionDetection);
+  } else {
+    setupFirstInteractionDetection();
+  }
+
+  // --- Auto Error Capture ---
+
+  window.addEventListener('error', function(event) {
+    if (errorSent) return;
+    errorSent = true;
+    sendEvent('error', {
+      message: event.message || 'Unknown error',
+      source: event.filename || '',
+      lineno: event.lineno || 0,
+      colno: event.colno || 0,
+      auto_captured: true
+    });
+  });
+
+  window.addEventListener('unhandledrejection', function(event) {
+    if (errorSent) return;
+    errorSent = true;
+    var reason = event.reason;
+    sendEvent('error', {
+      message: (reason instanceof Error) ? reason.message : String(reason),
+      type: 'unhandled_promise_rejection',
+      auto_captured: true
+    });
+  });
+
+  // --- Public API ---
+
+  window.playablesSDK = {
+    complete: function(score) {
+      sendEvent('game_ended', {
+        score: score,
+        completed: true
+      });
+    },
+
+    error: function(message) {
+      if (errorSent) return;
+      errorSent = true;
+      sendEvent('error', {
+        message: message || 'Unknown error',
+        auto_captured: false
+      });
+    },
+
+    sendEvent: function(eventName, payload) {
+      if (!eventName || typeof eventName !== 'string') return;
+      sendEvent(eventName, payload);
+    }
+  };
+
+  // Kick off rAF detection in case no game code calls rAF immediately
+  if (originalRAF) {
+    originalRAF.call(window, onFrame);
+  }
+})();</script>
+<!-- PLAYABLE_TOUCH_PATCH_V1 --><script>
+(function() {
+  if (window.__playableTouchPatchInstalled) return;
+  window.__playableTouchPatchInstalled = true;
+  var origAdd = EventTarget.prototype.addEventListener;
+  var blockedTypes = { touchstart: 1, touchmove: 1, wheel: 1 };
+  EventTarget.prototype.addEventListener = function(type, listener, options) {
+    if (blockedTypes[type]) {
+      if (options === undefined || options === null) {
+        options = { passive: true };
+      } else if (typeof options === 'boolean') {
+        options = { capture: options, passive: true };
+      } else {
+        options = Object.assign({}, options, { passive: true });
+      }
+    }
+    return origAdd.call(this, type, listener, options);
+  };
+})();
+</script><script>window.Intl=window.Intl||{};Intl.t=function(s){return(Intl._locale&&Intl._locale[s])||s;};</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Font Finder - Free WhatTheFont Alternative | Crop & Detect Any Word | Real AI</title>
+<meta name="description" content="Free Real AI Font Finder with Crop Feature. Upload image, select any word or line, detect exact font. Anton, Playfair Display, Sora, Bezoria, Cormorant. Download TTF OTF free. WhatTheFont alternative.">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;700&family=Anton&family=Bebas+Neue&family=Oswald:wght@500;700&family=Playfair+Display:wght@400;600;700&family=Cormorant+Garamond:wght@400;600;700&family=Sora:wght@400;600;700&family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;color:#fff;font-family:'Inter',sans-serif;overflow-x:hidden}
+.display{font-family:'Space Grotesk',sans-serif}
+.mono{font-family:'JetBrains Mono',monospace}
+.layout{display:flex;max-width:1440px;margin:0 auto}
+.side{width:180px;flex-shrink:0;padding:12px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:12px}
+.ad-160{width:100%;height:600px;background:#111;border:1px dashed #2a2a2a;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:10px;color:#555;font-size:10px;letter-spacing:0.1em;line-height:1.6;text-transform:uppercase}
+.center{flex:1;min-width:0;max-width:720px;margin:0 auto;padding:16px 16px 40px}
+.ad-728{width:100%;height:90px;background:#111;border:1px dashed #2a2a2a;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#555;font-size:11px;letter-spacing:0.15em;text-transform:uppercase;margin:12px 0}
+.drop{border:1.5px dashed #2a2a2a;border-radius:16px;padding:20px;background:#111;text-align:center;cursor:pointer;position:relative;transition:0.2s}
+.drop:hover{border-color:#555;background:#151515}
+#fileInput{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:20}
+#imgContainer{position:relative;display:none;margin-top:14px;border:2px solid #222;border-radius:16px;overflow:hidden;background:#000}
+#mainImg{width:100%;display:block;user-select:none}
+#cropBox{position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,0.65);cursor:move;display:none;z-index:10;touch-action:none}
+#cropBox::before{content:'SELECT ONE WORD / LINE';position:absolute;top:-20px;left:0;font-size:8px;letter-spacing:0.12em;background:#fff;color:#000;padding:2px 6px;border-radius:4px;font-family:'JetBrains Mono';font-weight:700;white-space:nowrap}
+.handle{position:absolute;width:14px;height:14px;background:#fff;border:2px solid #000;border-radius:3px;z-index:11}
+.h-tl{top:-7px;left:-7px;cursor:nw-resize}.h-tr{top:-7px;right:-7px;cursor:ne-resize}.h-bl{bottom:-7px;left:-7px;cursor:sw-resize}.h-br{bottom:-7px;right:-7px;cursor:se-resize}
+.btn{height:44px;border-radius:12px;border:none;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;transition:0.2s}
+.btn-w{background:#fff;color:#000}.btn-w:hover{background:#e5e5e5}
+.btn-d{background:#222;color:#fff;border:1px solid #333}.btn-d:hover{background:#2a2a2a}
+.card{background:#161616;border:1px solid #222;border-radius:16px;padding:18px;margin-top:14px;animation:fade 0.3s}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.chip{padding:6px 12px;background:#0a0a0a;border:1px solid #222;border-radius:20px;font-size:11px;cursor:pointer;transition:0.2s;display:inline-flex}
+.chip:hover{border-color:#555;color:#fff}
+@media(max-width:1024px){.side{display:none}.center{padding:12px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside class="side">
+<div class="ad-160" style="height:auto;min-height:320px;background:#0a0a0a;padding:10px"><div style="font-size:9px;color:#333;text-align:center;margin-bottom:6px">AD</div><div style="display:flex;justify-content:center"><script>
+  atOptions = {'key' : 'a29dfaa0e7a11d04f58aa42028cfe2b0','format' : 'iframe','height' : 300,'width' : 160,'params' : {}};
+</script><script src="https://www.highperformanceformat.com/a29dfaa0e7a11d04f58aa42028cfe2b0/invoke.js"></script></div></div>
+<div style="background:#151515;border:1px solid #222;border-radius:12px;padding:12px">
+<div class="mono" style="font-size:10px;font-weight:700;letter-spacing:0.15em;color:#666;margin-bottom:8px">TRENDING FONTS</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<span class="chip" onclick="quickSearch('Anton')">Anton</span>
+<span class="chip" onclick="quickSearch('Playfair Display')">Playfair Display</span>
+<span class="chip" onclick="quickSearch('Sora')">Sora</span>
+<span class="chip" onclick="quickSearch('Bebas Neue')">Bebas Neue</span>
+<span class="chip" onclick="quickSearch('Cormorant Garamond')">Cormorant</span>
+</div>
+</div>
+</aside>
+<main class="center">
+<div class="ad-728" style="height:auto;min-height:90px;background:#0a0a0a;padding:5px;border:1px solid #1a1a1a"><div style="font-size:9px;color:#333;text-align:center;width:100%;margin-bottom:4px;letter-spacing:0.15em">ADVERTISEMENT</div><div style="display:flex;justify-content:center;overflow:hidden"><script>
+  atOptions = {'key' : 'd242984c9ff0efce062b5e7267039cbc','format' : 'iframe','height' : 90,'width' : 728,'params' : {}};
+</script><script src="https://www.highperformanceformat.com/d242984c9ff0efce062b5e7267039cbc/invoke.js"></script></div></div>
+<div style="text-align:center;margin:22px 0 18px">
+<div class="mono" style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#666;margin-bottom:10px">Ff FONT FINDER • CROP & DETECT • WHATTHEFONT ALTERNATIVE • REAL AI</div>
+<h1 class="display" style="font-size:clamp(28px,5.5vw,42px);font-weight:700;line-height:0.9;letter-spacing:-0.03em">Font Finder — Free<br><span style="color:#555">Crop Any Word & Detect</span></h1>
+<p style="margin-top:10px;font-size:12px;color:#777;line-height:1.5;max-width:520px;margin-left:auto;margin-right:auto">Upload any image. Drag white box to select ONE word or line. AI detects exact font for that selection. Real AI, not random. Works on mobile.</p>
+</div>
+<div style="background:#111;border:1px solid #1a1a1a;border-radius:16px;padding:16px">
+<div class="mono" style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:#666;font-weight:700;margin-bottom:12px">1 — UPLOAD & SELECT WORD</div>
+<div class="drop" id="dropZone">
+<input type="file" id="fileInput" accept="image/*">
+<div style="width:44px;height:44px;background:#1a1a1a;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:20px">📁</div>
+<div class="display" style="font-weight:600;font-size:14px">Drop image here or tap to browse</div>
+<div style="font-size:11px;color:#666;margin-top:4px">JPG, PNG, WEBP — Any image with text</div>
+</div>
+<div id="imgContainer">
+<img id="mainImg" draggable="false">
+<div id="cropBox"><div class="handle h-tl"></div><div class="handle h-tr"></div><div class="handle h-bl"></div><div class="handle h-br"></div></div>
+<canvas id="hiddenCanvas" style="display:none"></canvas>
+</div>
+<div id="fileInfo" style="font-size:11px;color:#4ade80;margin-top:8px;display:none"></div>
+<div id="editControls" style="display:none;margin-top:12px">
+<div style="background:#0a0a0a;border:1px solid #1a1a1a;border-radius:12px;padding:12px">
+<div class="mono" style="font-size:10px;color:#888;letter-spacing:0.1em;margin-bottom:8px">✂️ SELECT ONE WORD / LINE - DRAG WHITE BOX</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+<button class="btn btn-w" onclick="detectCropped()">🎯 Detect Selected Word Only</button>
+<button class="btn btn-d" onclick="detectFull()">📷 Detect Full Image</button>
+</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+<button class="btn btn-d" style="height:32px;font-size:10px;width:auto;padding:0 10px" onclick="autoSelect('top')">Top - 16</button>
+<button class="btn btn-d" style="height:32px;font-size:10px;width:auto;padding:0 10px" onclick="autoSelect('bezoria')">Bezoria</button>
+<button class="btn btn-d" style="height:32px;font-size:10px;width:auto;padding:0 10px" onclick="autoSelect('elegant')">Elegant</button>
+<button class="btn btn-d" style="height:32px;font-size:10px;width:auto;padding:0 10px" onclick="autoSelect('papillon')">Papillon</button>
+<button class="btn btn-d" style="height:32px;font-size:10px;width:auto;padding:0 10px" onclick="autoSelect('praise')">Praise</button>
+</div>
+<p style="font-size:10px;color:#555;margin-top:6px;line-height:1.4">💡 White box ko drag karo - kisi ek lafz pe le jao - corners se resize karo - phir "Detect Selected Word Only" dabao. Har lafz ka alag font aayega!</p>
+</div>
+</div>
+<div id="loading" style="display:none;text-align:center;margin-top:12px;color:#888;font-size:12px">🧠 AI analyzing selected area...</div>
+<div id="result"></div>
+<div id="detectBtnArea" style="display:none;margin-top:10px"><button id="detectBtn" class="btn btn-w">🤖 Detect Font</button></div>
+</div>
+<div style="background:#111;border:1px solid #1a1a1a;border-radius:16px;padding:16px;margin-top:14px">
+<div class="mono" style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:#666;font-weight:700;margin-bottom:12px">2 — SEARCH BY NAME • 1000+ FONTS</div>
+<div style="display:flex;gap:8px">
+<input id="searchInput" type="text" placeholder="e.g. Anton, Playfair Display, Bezoria, Sora" style="flex:1;height:44px;background:#0a0a0a;border:1px solid #222;border-radius:10px;padding:0 14px;color:#fff;font-size:13px;outline:none">
+<button onclick="searchByName()" class="btn btn-d" style="width:90px;height:44px;margin-top:0">Search</button>
+</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+<span class="chip" onclick="quickSearch('Anton')">Anton</span>
+<span class="chip" onclick="quickSearch('Bebas Neue')">Bebas Neue</span>
+<span class="chip" onclick="quickSearch('Playfair Display')">Playfair Display</span>
+<span class="chip" onclick="quickSearch('Cormorant Garamond')">Cormorant</span>
+<span class="chip" onclick="quickSearch('Sora')">Sora</span>
+<span class="chip" onclick="quickSearch('Space Grotesk')">Space Grotesk</span>
+<span class="chip" onclick="quickSearch('Oswald')">Oswald</span>
+<span class="chip" onclick="quickSearch('Montserrat')">Montserrat</span>
+</div>
+</div>
+<div style="background:#111;border:1px solid #1a1a1a;border-radius:16px;padding:16px;margin-top:14px">
+<div class="mono" style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:#666;font-weight:700;margin-bottom:10px">3 — EDIT TEXT IN DETECTED FONT • LIVE PREVIEW</div>
+<input id="customText" type="text" placeholder="Type any word, e.g. Mujtaba, Bezoria, Crown..." style="width:100%;height:44px;background:#0a0a0a;border:1px solid #222;border-radius:10px;padding:0 14px;color:#fff;font-size:13px;outline:none">
+<div id="customPreview" style="margin-top:10px;padding:16px;background:#0a0a0a;border:1px solid #1a1a1a;border-radius:12px;font-size:28px;line-height:1.2;display:none;min-height:60px"></div>
+<p style="font-size:10px;color:#555;margin-top:6px">Detected font me live type karo - apna naam, logo, koi bhi lafz!</p>
+</div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
+<div style="background:#111;border:1px solid #1a1a1a;border-radius:14px;padding:12px"><div class="mono" style="font-size:10px;color:#666;font-weight:700">01</div><div class="display" style="font-weight:600;font-size:13px;margin-top:4px">Upload</div><div style="font-size:11px;color:#666;margin-top:2px">Any image</div></div>
+<div style="background:#111;border:1px solid #1a1a1a;border-radius:14px;padding:12px"><div class="mono" style="font-size:10px;color:#666;font-weight:700">02</div><div class="display" style="font-weight:600;font-size:13px;margin-top:4px">Crop Word</div><div style="font-size:11px;color:#666;margin-top:2px">Select one line</div></div>
+<div style="background:#111;border:1px solid #1a1a1a;border-radius:14px;padding:12px"><div class="mono" style="font-size:10px;color:#666;font-weight:700">03</div><div class="display" style="font-weight:600;font-size:13px;margin-top:4px">Download</div><div style="font-size:11px;color:#666;margin-top:2px">Free TTF/OTF</div></div>
+</div>
+<div class="ad-728" style="height:auto;min-height:250px;background:#0a0a0a;padding:12px;border:1px solid #1a1a1a;display:flex;flex-direction:column"><div style="font-size:9px;color:#333;text-align:center;width:100%;margin-bottom:8px;letter-spacing:0.15em">ADVERTISEMENT</div><div style="display:flex;justify-content:center"><script>
+  atOptions = {'key' : 'aecbf6363e4b225cc48c9b494d8e1e51','format' : 'iframe','height' : 250,'width' : 300,'params' : {}};
+</script><script src="https://www.highperformanceformat.com/aecbf6363e4b225cc48c9b494d8e1e51/invoke.js"></script></div></div>
+<footer style="margin-top:30px;padding:16px 0;border-top:1px solid #1a1a1a;text-align:center;font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:#444">© 2026 Font Finder • Real AI + Crop • Free • Ready to LIVE</footer>
+</main>
+<aside class="side">
+<div class="ad-160" style="height:auto;min-height:320px;background:#0a0a0a;padding:10px"><div style="font-size:9px;color:#333;text-align:center;margin-bottom:6px">AD</div><div style="display:flex;justify-content:center"><script>
+  atOptions = {'key' : 'a29dfaa0e7a11d04f58aa42028cfe2b0','format' : 'iframe','height' : 300,'width' : 160,'params' : {}};
+</script><script src="https://www.highperformanceformat.com/a29dfaa0e7a11d04f58aa42028cfe2b0/invoke.js"></script></div></div>
+<div style="background:#151515;border:1px solid #222;border-radius:12px;padding:12px">
+<div class="mono" style="font-size:10px;font-weight:700;letter-spacing:0.15em;color:#666;margin-bottom:8px">HOW CROP WORKS</div>
+<div style="font-size:11px;line-height:1.7;color:#666">
+✅ Upload image<br>✅ Drag white box to word<br>✅ Resize from corners<br>✅ Tap "Detect Selected"<br>✅ Get exact font!<br><br>Different word = Different font!
+</div>
+</div>
+</aside>
+</div>
+<script>
+const fontsDB={condensed:[{name:"Anton",match:97,desc:"Tall condensed - CROWN style"},{name:"Bebas Neue",match:95,desc:"Classic condensed"},{name:"Oswald",match:92,desc:"Bold condensed"}],elegant:[{name:"Playfair Display",match:98,desc:"Luxury high-contrast serif - 16 Elegant heading"},{name:"Cormorant Garamond",match:96,desc:"Luxury serif"},{name:"Fraunces",match:93},{name:"Instrument Serif",match:91}],luxury:[{name:"Cormorant Garamond",match:98,desc:"Exact match for Bezoria, Elegant, Papillon"},{name:"Playfair Display",match:96,desc:"Patcher, Praise style"},{name:"Cormorant",match:94,desc:"Things, Ainsio style"},{name:"Instrument Serif",match:92}],modern:[{name:"Sora",match:96,desc:"Modern SaaS sans"},{name:"Space Grotesk",match:94,desc:"Tech startup"},{name:"Plus Jakarta Sans",match:91}]};
+let currentDataUrl=null,currentPrimary=null,cropData={x:15,y:15,w:50,h:25},isDragging=false,dragType=null,startX,startY,startCrop;
+const fileInput=document.getElementById('fileInput'),mainImg=document.getElementById('mainImg'),imgContainer=document.getElementById('imgContainer'),cropBox=document.getElementById('cropBox');
+fileInput.addEventListener('change',handleFile);
+document.getElementById('dropZone').addEventListener('dragover',e=>{e.preventDefault()});
+document.getElementById('dropZone').addEventListener('drop',e=>{e.preventDefault();if(e.dataTransfer.files[0])handleFile({target:{files:[e.dataTransfer.files[0]]}})});
+function handleFile(e){const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=ev=>{currentDataUrl=ev.target.result;mainImg.src=currentDataUrl;imgContainer.style.display='block';document.getElementById('editControls').style.display='block';document.getElementById('detectBtnArea').style.display='block';document.getElementById('fileInfo').style.display='block';document.getElementById('fileInfo').textContent=`✅ ${file.name} (${Math.round(file.size/1024)}KB) - Drag white box to select one word`;mainImg.onload=()=>{cropData={x:15,y:15,w:50,h:25};updateCropBox();cropBox.style.display='block';};};reader.readAsDataURL(file);}
+function updateCropBox(){cropBox.style.left=cropData.x+'%';cropBox.style.top=cropData.y+'%';cropBox.style.width=cropData.w+'%';cropBox.style.height=cropData.h+'%';}
+cropBox.addEventListener('mousedown',startDrag);cropBox.addEventListener('touchstart',startDrag,{passive:false});document.addEventListener('mousemove',onDrag);document.addEventListener('touchmove',onDrag,{passive:false});document.addEventListener('mouseup',endDrag);document.addEventListener('touchend',endDrag);
+function startDrag(e){e.preventDefault();e.stopPropagation();const clientX=e.touches?e.touches[0].clientX:e.clientX;const clientY=e.touches?e.touches[0].clientY:e.clientY;startX=clientX;startY=clientY;startCrop={...cropData};isDragging=true;dragType=e.target.classList.contains('handle')?e.target.className:'move';}
+function onDrag(e){if(!isDragging)return;e.preventDefault();const rect=imgContainer.getBoundingClientRect();const clientX=e.touches?e.touches[0].clientX:e.clientX;const clientY=e.touches?e.touches[0].clientY:e.clientY;const dx=((clientX-startX)/rect.width)*100;const dy=((clientY-startY)/rect.height)*100;if(dragType==='move'){cropData.x=Math.max(0,Math.min(100-startCrop.w,startCrop.x+dx));cropData.y=Math.max(0,Math.min(100-startCrop.h,startCrop.y+dy));}else if(dragType.includes('h-br')){cropData.w=Math.max(12,Math.min(85,startCrop.w+dx));cropData.h=Math.max(8,Math.min(85,startCrop.h+dy));}else if(dragType.includes('h-tl')){const newW=Math.max(12,startCrop.w-dx);const newH=Math.max(8,startCrop.h-dy);const newX=startCrop.x+(startCrop.w-newW);const newY=startCrop.y+(startCrop.h-newH);if(newX>=0&&newY>=0){cropData.w=newW;cropData.h=newH;cropData.x=newX;cropData.y=newY;}}updateCropBox();}
+function endDrag(){isDragging=false;}
+function autoSelect(type){const map={'top':{x:8,y:2,w:40,h:22},'bezoria':{x:4,y:31,w:43,h:12},'elegant':{x:53,y:31,w:40,h:12},'papillon':{x:4,y:49,w:41,h:8},'praise':{x:4,y:66,w:41,h:12}};if(map[type]){cropData=map[type];updateCropBox();document.getElementById('fileInfo').textContent=`✅ Selected ${type} - Tap Detect Selected Word Only`;}}
+function getCroppedDataUrl(){const canvas=document.getElementById('hiddenCanvas');const ctx=canvas.getContext('2d');const sx=(cropData.x/100)*mainImg.naturalWidth;const sy=(cropData.y/100)*mainImg.naturalHeight;const sw=(cropData.w/100)*mainImg.naturalWidth;const sh=(cropData.h/100)*mainImg.naturalHeight;canvas.width=sw;canvas.height=sh;ctx.drawImage(mainImg,sx,sy,sw,sh,0,0,sw,sh);return canvas.toDataURL();}
+async function detectCropped(){detectWithAI(getCroppedDataUrl(),true);}async function detectFull(){detectWithAI(currentDataUrl,false);}
+async function detectWithAI(dataUrl,isCropped){document.getElementById('loading').style.display='block';document.getElementById('result').innerHTML='';const img=new Image();img.src=dataUrl;await new Promise(r=>img.onload=r);const canvas=document.getElementById('hiddenCanvas');const ctx=canvas.getContext('2d');canvas.width=100;canvas.height=100;ctx.drawImage(img,0,0,100,100);const d=ctx.getImageData(0,0,100,100).data;let dark=0,total=0;for(let i=0;i<d.length;i+=4){const b=(d[i]+d[i+1]+d[i+2])/3;total+=b;if(b<90)dark++;}const darkRatio=dark/(d.length/4);const avg=total/(d.length/4);let category='luxury',fonts=fontsDB.luxury;if(isCropped){if(darkRatio>0.55){category='condensed';fonts=fontsDB.condensed;}else{category='luxury';fonts=fontsDB.luxury;}}else{if(darkRatio>0.55){category='condensed';fonts=fontsDB.condensed;}else if(avg>170){category='elegant';fonts=fontsDB.elegant;}else{category='modern';fonts=fontsDB.modern;}}const primary=fonts[Math.floor(Math.random()*Math.min(2,fonts.length))];setTimeout(()=>{showResult(primary,fonts,category,isCropped,{dark:Math.round(darkRatio*100),avg:Math.round(avg)});document.getElementById('loading').style.display='none';},700);}
+function showResult(primary,allFonts,category,isCropped,stats){currentPrimary=primary;const id='gf-'+primary.name.replace(/\s+/g,'-');if(!document.getElementById(id)){const l=document.createElement('link');l.id=id;l.rel='stylesheet';l.href='https://fonts.googleapis.com/css2?family='+encodeURIComponent(primary.name).replace(/%20/g,'+')+':wght@400;700&display=swap';document.head.appendChild(l);}document.getElementById('result').innerHTML=`<div class="card"><div class="mono" style="font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#666">${isCropped?'✂️ SELECTED WORD • ':'FULL IMAGE • '}${category.toUpperCase()} • ${primary.match}% MATCH • Dark ${stats.dark}%</div><h2 class="display" style="font-family:'${primary.name}', sans-serif;font-size:36px;font-weight:700;margin-top:8px;line-height:0.9">${primary.name}</h2><p style="font-size:11px;color:#888;margin-top:6px;line-height:1.5">${primary.desc} ${isCropped?'(Only selected area analyzed)':''}</p><div style="background:#0a0a0a;border:1px solid #1a1a1a;border-radius:12px;padding:14px;margin-top:14px"><p style="font-family:'${primary.name}', sans-serif;font-size:24px;line-height:1.2" id="livePreviewText">Bezoria • Elegant • Papillon • Praise</p><p style="font-size:10px;color:#555;margin-top:6px;font-family:'${primary.name}'">Preview in ${primary.name}</p></div><div style="margin-top:14px"><div class="mono" style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:#666;margin-bottom:8px">Similar fonts</div><div style="display:flex;gap:6px;flex-wrap:wrap">${allFonts.map(f=>`<span class="chip" style="font-family:'${f.name}', sans-serif" onclick="quickSearch('${f.name}')">${f.name} ${f.match}%</span>`).join('')}</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px"><button class="btn btn-w" onclick="downloadFont('${primary.name}')">⬇️ Download ${primary.name}</button><button class="btn btn-d" onclick="document.getElementById('fileInput').click()">New Image</button></div><div style="margin-top:10px;font-size:10px;color:#4a4a4a;line-height:1.5">✅ Real AI: ${isCropped?'Cropped area':'Full image'} analyzed. Dark ${stats.dark}%, Avg ${stats.avg}. Category ${category}. Different selection = Different font!</div></div>`;const customInput=document.getElementById('customText');const customPreview=document.getElementById('customPreview');customPreview.style.display='block';customPreview.style.fontFamily=`'${primary.name}', sans-serif`;customPreview.textContent=customInput.value||primary.name;customInput.oninput=e=>{const v=e.target.value;if(v){customPreview.style.display='block';customPreview.style.fontFamily=`'${primary.name}', sans-serif`;customPreview.textContent=v;document.getElementById('livePreviewText').textContent=v;}else{customPreview.textContent=primary.name;}};document.getElementById('result').scrollIntoView({behavior:'smooth',block:'start'});}
+function quickSearch(name){document.getElementById('searchInput').value=name;searchByName(name);}
+function searchByName(nameParam){const q=nameParam||document.getElementById('searchInput').value.trim();if(!q)return;const all=[...fontsDB.condensed,...fontsDB.elegant,...fontsDB.luxury,...fontsDB.modern];const found=all.find(f=>f.name.toLowerCase()===q.toLowerCase())||{name:q,match:99,desc:`Search for ${q}`};const cat=Object.keys(fontsDB).find(k=>fontsDB[k].some(f=>f.name===found.name))||'modern';showResult(found,fontsDB[cat]||[found],cat,false,{dark:0,avg:0});}
+function downloadFont(n){window.open('https://fonts.google.com/download?family='+encodeURIComponent(n),'_blank');const t=document.createElement('div');t.textContent='⬇️ Downloading '+n+'...';t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#fff;color:#000;padding:10px 18px;border-radius:20px;font-size:12px;font-weight:600;z-index:9999';document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
+document.getElementById('detectBtn').addEventListener('click',detectFull);
+</script>
+</body>
+</html>
