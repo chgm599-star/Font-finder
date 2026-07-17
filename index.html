@@ -356,7 +356,6 @@ body{background:#0a0a0a;color:#fff;font-family:'Inter',sans-serif;overflow-x:hid
 </div>
 </aside>
 </div>
-<!-- SINGLE FOOTER ONLY - FIXED DUPLICATE ISSUE -->
 <footer style="text-align:center; padding:20px; margin-top:50px; border-top:1px solid #222; background:#0a0a0a;">
   <a href="/about.html" style="color:#fff; margin:0 8px; text-decoration:none; font-size:13px;">About Us</a> | 
   <a href="/privacy.html" style="color:#fff; margin:0 8px; text-decoration:none; font-size:13px;">Privacy Policy</a> | 
@@ -365,7 +364,6 @@ body{background:#0a0a0a;color:#fff;font-family:'Inter',sans-serif;overflow-x:hid
   <p style="color:#888; margin-top:10px; font-size:12px;">© 2026 Font Finder - World's Biggest FREE Font Finder - 75K+ Fonts - All Languages - 100% Legal</p>
 </footer>
 <script>
-// WORLD'S BIGGEST FREE FONT DATABASE - 75K+ LEGAL
 const fontsDB={
  condensed:[{name:"Anton",match:97,desc:"Tall condensed - CROWN, NIKE style"},{name:"Bebas Neue",match:95,desc:"Classic condensed - Logo alternative"},{name:"Oswald",match:92,desc:"Bold condensed"}],
  elegant:[{name:"Playfair Display",match:98,desc:"Luxury high-contrast serif"},{name:"Cormorant Garamond",match:96,desc:"Luxury serif - Bezoria style"},{name:"Fraunces",match:93},{name:"Instrument Serif",match:91}],
@@ -376,7 +374,6 @@ const fontsDB={
  logo:[{name:"Anton",match:96,desc:"NIKE Style - Original Futura Extra Bold Paid - FREE Alternative: Anton 96% Match",logo:"NIKE"},{name:"Montserrat",match:95,desc:"ADIDAS Style - Original Avant Garde Paid - FREE Alternative: Montserrat ExtraBold",logo:"ADIDAS"},{name:"Lobster",match:94,desc:"COCA-COLA Style - Custom - FREE Alternative: Lobster 94%",logo:"COCA"},{name:"Great Vibes",match:97,desc:"Signature Style - 100% Free - Great Vibes, Allura, Pacifico",logo:"SIGN"}],
  hindi:[{name:"Noto Sans Devanagari",match:98,desc:"हिन्दी - Best Hindi Devanagari",lang:"HI"},{name:"Mukta",match:95,desc:"हिन्दी - Mukta",lang:"HI"}]
 };
-
 const logoMap = {
   "nike": {name:"Anton", match:96, desc:"NIKE Original is Futura Condensed Extra Bold (Paid) - FREE Alternative: Anton 96% Match - 100% Legal", isLogo:true},
   "adidas": {name:"Montserrat", match:95, desc:"ADIDAS Original is Avant Garde Gothic (Paid) - FREE Alternative: Montserrat ExtraBold - Legal", isLogo:true},
@@ -385,7 +382,6 @@ const logoMap = {
   "signature": {name:"Great Vibes", match:97, desc:"Signature Style - 100% Free - Great Vibes / Allura", isLogo:true},
   "pepsi": {name:"Bebas Neue", match:94, desc:"PEPSI Style - FREE Alternative", isLogo:true}
 };
-
 let currentDataUrl=null,currentPrimary=null,cropData={x:15,y:15,w:50,h:25},isDragging=false,dragType=null,startX,startY,startCrop;
 const fileInput=document.getElementById('fileInput'),mainImg=document.getElementById('mainImg'),imgContainer=document.getElementById('imgContainer'),cropBox=document.getElementById('cropBox');
 fileInput.addEventListener('change',handleFile);
@@ -428,7 +424,6 @@ function showResult(primary,allFonts,category,isCropped,stats){
  document.getElementById('result').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function quickSearch(name){
- // Check logo map
  const lower=name.toLowerCase();
  for(let k in logoMap){
    if(lower.includes(k)){
@@ -445,7 +440,6 @@ function searchByName(nameParam){
  const q=nameParam||document.getElementById('searchInput').value.trim();
  if(!q)return;
  const lower=q.toLowerCase();
- // Check logo first
  for(let k in logoMap){
    if(lower.includes(k)){
      const m=logoMap[k];
@@ -453,7 +447,6 @@ function searchByName(nameParam){
      return;
    }
  }
- // Check Urdu/Arabic keywords
  if(lower.includes('urdu')||lower.includes('نستعلیق')||lower.includes('اردو')){
    showResult(fontsDB.urdu[0],fontsDB.urdu,'urdu',false,{dark:0,avg:0}); return;
  }
@@ -478,7 +471,6 @@ function downloadFont(n){
 }
 document.getElementById('detectBtn').addEventListener('click',detectFull);
 </script>
-
 <script>
 // AUTO LANG PATCH V3 - Override old detectWithAI
 async function detectWithAI(dataUrl,isCropped){
@@ -497,8 +489,6 @@ async function detectWithAI(dataUrl,isCropped){
       if(['nike','adidas','coca','puma'].some(k=>l.includes(k))) detectedLang='logo';
     }
   }catch(e){ console.log(e); }
-  
-  // Fallback visual if no OCR
   const img=new Image(); img.src=dataUrl; await new Promise(r=>img.onload=r);
   const canvas=document.getElementById('hiddenCanvas'); const ctx=canvas.getContext('2d');
   canvas.width=100; canvas.height=100; ctx.drawImage(img,0,0,100,100);
@@ -525,6 +515,5 @@ async function detectWithAI(dataUrl,isCropped){
   setTimeout(()=>{ showResult(primary,fonts,category,isCropped,{dark:Math.round(darkRatio*100),avg:Math.round(avg),ocr:ocrText,autoLang:detectedLang}); document.getElementById('loading').style.display='none'; },600);
 }
 </script>
-
 </body>
 </html>
