@@ -247,6 +247,7 @@ body{background:#0a0a0a;color:#fff;font-family:'Inter',sans-serif;overflow-x:hid
 .lang-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-left:6px}
 .lang-urdu{background:#00E5FF;color:#000}.lang-ar{background:#E8FF00;color:#000}.lang-logo{background:#ff4d4d;color:#fff}
 </style>
+<script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
 </head>
 <body>
 <div class="layout">
@@ -477,5 +478,53 @@ function downloadFont(n){
 }
 document.getElementById('detectBtn').addEventListener('click',detectFull);
 </script>
+
+<script>
+// AUTO LANG PATCH V3 - Override old detectWithAI
+async function detectWithAI(dataUrl,isCropped){
+  document.getElementById('loading').style.display='block';
+  document.getElementById('loading').innerHTML='🧠 Auto Detecting - Urdu/English/Logo...';
+  document.getElementById('result').innerHTML='';
+  let detectedLang='english'; let ocrText='';
+  try{
+    const result = await Tesseract.recognize(dataUrl, 'eng+urd+ara', {logger:m=>{}});
+    ocrText = result.data.text.trim();
+    if(/[\u0600-\u06FF]/.test(ocrText)) {
+      if(/[ٹڈڑںےی]/.test(ocrText)) detectedLang='urdu'; else detectedLang='arabic';
+    } else if(/[\u0900-\u097F]/.test(ocrText)) detectedLang='hindi';
+    else {
+      let l=ocrText.toLowerCase();
+      if(['nike','adidas','coca','puma'].some(k=>l.includes(k))) detectedLang='logo';
+    }
+  }catch(e){ console.log(e); }
+  
+  // Fallback visual if no OCR
+  const img=new Image(); img.src=dataUrl; await new Promise(r=>img.onload=r);
+  const canvas=document.getElementById('hiddenCanvas'); const ctx=canvas.getContext('2d');
+  canvas.width=100; canvas.height=100; ctx.drawImage(img,0,0,100,100);
+  const d=ctx.getImageData(0,0,100,100).data; let dark=0,total=0;
+  for(let i=0;i<d.length;i+=4){const b=(d[i]+d[i+1]+d[i+2])/3; total+=b; if(b<90) dark++;}
+  const darkRatio=dark/(d.length/4); const avg=total/(d.length/4);
+  let fonts, primary, category=detectedLang;
+  if(detectedLang==='urdu'){ fonts=fontsDB.urdu; primary={...fonts[0], desc:`Auto Detected URDU: "${ocrText}" - ${fonts[0].desc}`}; }
+  else if(detectedLang==='arabic'){ fonts=fontsDB.arabic; primary={...fonts[0], desc:`Auto Detected ARABIC: "${ocrText}"`}; }
+  else if(detectedLang==='hindi'){ fonts=fontsDB.hindi; primary=fonts[0]; }
+  else if(detectedLang==='logo'){ 
+    fonts=fontsDB.logo; 
+    let lower=ocrText.toLowerCase(); let found=null;
+    for(let k in logoMap){ if(lower.includes(k)){ found=logoMap[k]; break; } }
+    if(found) primary={name:found.name, match:found.match, desc:`Auto Logo: "${ocrText}" - ${found.desc}`, logo:ocrText.toUpperCase()};
+    else primary=fonts[0];
+  }
+  else {
+    if(darkRatio>0.55){ fonts=fontsDB.condensed; } else if(avg>170){ fonts=fontsDB.elegant; } else { fonts=fontsDB.modern; }
+    primary=fonts[Math.floor(Math.random()*Math.min(2,fonts.length))];
+    if(ocrText) primary={...primary, desc: primary.desc+` | Detected: "${ocrText}"`};
+    category='modern';
+  }
+  setTimeout(()=>{ showResult(primary,fonts,category,isCropped,{dark:Math.round(darkRatio*100),avg:Math.round(avg),ocr:ocrText,autoLang:detectedLang}); document.getElementById('loading').style.display='none'; },600);
+}
+</script>
+
 </body>
 </html>
